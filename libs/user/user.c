@@ -1,4 +1,4 @@
 // user.c
 #include "user.h"
 
-user current_user = {"root", "root"};
+User current_user = {"root", 1};

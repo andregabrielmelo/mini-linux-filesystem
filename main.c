@@ -1,60 +1,93 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include "libs/filesystem/filesystem.h"
 #include "libs/user/user.h"
 
-// Caminho do diretório atual
-char* get_directory_fullpath(ext4_inode* cwd) {
-    // Caminho simulado: apenas "/" porque não há árvore real com nomes
-    char* path = malloc(16);
-    strcpy(path, "/");
-    return path;
+extern User current_user;
+
+// Function to reverse a string in-place
+void reverse_str(char* str) {
+    int len = strlen(str);
+    for (int i = 0; i < len / 2; ++i) {
+        char tmp = str[i];
+        str[i] = str[len - 1 - i];
+        str[len - 1 - i] = tmp;
+    }
+}
+
+// Get full path from cwd to root
+char* get_directory_fullpath(inode* cwd) {
+    char* path_parts[128]; // Array of pointers to directory names
+    int count = 0;
+
+    // Traverse upwards collecting names
+    while (cwd->parent != NULL) {
+        path_parts[count++] = cwd->fcb.name;
+        cwd = cwd->parent;
+    }
+
+    // Allocate result buffer
+    char* fullpath = malloc(1024);
+    if (!fullpath) return NULL;
+    fullpath[0] = '\0';
+
+    // Rebuild path from root
+    for (int i = count - 1; i >= 0; --i) {
+        strcat(fullpath, "/");
+        strcat(fullpath, path_parts[i]);
+    }
+
+    // Handle root case
+    if (count == 0) {
+        strcpy(fullpath, "/");
+    }
+
+    return fullpath;
 }
 
 int main() {
+    // Define o usuário atual
+    current_user = (User){ .username = "root", .id = 0, .group_id = 0 };
 
-    // Simula um usuário atual (simplificado)
-    user current_user = { .name = "root" };
+    // Cria a raiz do sistema de arquivos
+    inode* root = malloc(sizeof(inode));
+    memset(root, 0, sizeof(inode));
+    strncpy(root->fcb.name, "/", NAME_MAX);
+    root->fcb.file_type = DIRECTORY;
+    root->fcb.data_type = CHARACTER;
+    root->fcb.permissions = (Permission){7, 5, 5};
+    root->parent = NULL;
 
-    // Ponteiro para o diretorio atual (current working directory)
-    ext4_inode* current_directory;
+    inode* current_directory = root;
 
-    // Inicializa raiz e define cwd
-    current_directory = create_inode(EXT4_FT_DIR, 0755);
-    dir_entries[1] = calloc(10, sizeof(ext4_dir_entry));
-    inode_table[1] = current_directory;
-
-    // cmd vai guadar a entrada do usurio
     char cmd[256];
     printf("MiniFS iniciado. Digite 'help' para comandos. Digite 'exit' para sair.\n");
     while (1) {
-        // Mostra o sitema, usuario atual e nome do diretorio atual
         char* fullpath = get_directory_fullpath(current_directory);
-        printf("[%s@MiniFS %s]$ ", current_user.name, fullpath);
+        printf("[%s@MiniFS %s]$ ", current_user.username, fullpath);
         free(fullpath);
 
-        // Pega a entrada do usuario quando ele da enter (new line)
         if (!fgets(cmd, sizeof(cmd), stdin)) continue;
-
-         // Limpa a entrada do usuario, substituindo o new line '\n' pelo string terminator '\0
         cmd[strcspn(cmd, "\n")] = 0;
 
-         // Chama os comandos de acordo com o que foi digitado
-        if (strcmp(cmd, "exit") == 0) 
-            break;
-        else if (strcmp(cmd, "help") == 0) 
-            help();
+        if (strcmp(cmd, "exit") == 0) break;
+        else if (strcmp(cmd, "clear") == 0) printf("\e[1;1H\e[2J");
+        else if (strcmp(cmd, "help") == 0) help();
         else if (strncmp(cmd, "mkdir ", 6) == 0) {
-            char *dirname =  cmd + 6;
-            mkdir(current_directory, cmd + );
+            mkdir(current_directory, cmd + 6);
         }
         else if (strncmp(cmd, "cd ", 3) == 0) {
-            char *dirname = cmd + 3;
-            current_directory = cd(current_directory, dirname);
+            inode* next = cd(current_directory, cmd + 3);
+            if (next != NULL) current_directory = next;
         }
         else if (strcmp(cmd, "ls") == 0) {
             ls(current_directory, NULL);
+        }
+        else if (strncmp(cmd, "ls ", 3) == 0) {
+            ls(current_directory, cmd + 3);
         }
         else if (strcmp(cmd, "ls -l") == 0) {
             ls_l(current_directory, NULL);
@@ -96,13 +129,13 @@ int main() {
             char* file = strtok(NULL, " ");
             if (perm_str && file) {
                 int perm = atoi(perm_str);
-                chmod(current_directory, file, (mode_t)perm);
+                chmod_cmd(current_directory, file, perm);
             } else {
                 printf("Uso: chmod <perm> <arquivo>\n");
             }
         }
         else if (strncmp(cmd, "stat ", 5) == 0) {
-            stat(current_directory, cmd + 5);
+            stat_cmd(current_directory, cmd + 5);
         }
         else {
             printf("%s: comando não encontrado\n", cmd);

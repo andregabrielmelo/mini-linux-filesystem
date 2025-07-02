@@ -2,6 +2,7 @@
     "files.associations": {
         ".env.*": "dotenv",
         "*.css": "css",
-        "filesystem.h": "c"
+        "filesystem.h": "c",
+        "fcb.h": "c"
     }
 }
